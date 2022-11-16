@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: leocloud-demo-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: leocloud-demo-deployment
+  template:
+    metadata:
+      labels:
+        app: leocloud-demo-deployment
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "218Mi"

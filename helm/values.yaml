@@ -1,0 +1,9 @@
+image:
+  repository: ghcr.io/s1mple133/leocloud-demo
+  pullPolicy: Always
+  tag: latest
+
+ingress:
+  host: student.cloud.htl-leonding.ac.at
+  path: /d.pavelescu/leocloud-demo
+

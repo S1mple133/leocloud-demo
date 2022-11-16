@@ -5,8 +5,12 @@ on:
     branches:
       - "main"
 
+env:
+  HELM_RELEASE_NAME: leocloud-demo
+  DEPLOYMENT_NAME: leocloud-demo-deployment # Due to using :latest tag, we need to restart the deployment to pull the new image
+
 jobs:
-  build_backend:
+  build:
     name: Build
     runs-on: ubuntu-latest
     env:
@@ -16,7 +20,7 @@ jobs:
         working-directory: .
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
@@ -28,7 +32,7 @@ jobs:
         run: echo "IMAGE_REGISTRY=$(echo ${{ env.REGISTRY }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV && ls -al .
 
       - name: Login to GitHub Registry
-        uses: docker/login-action@v1
+        uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -40,3 +44,39 @@ jobs:
           file: ./src/main/docker/Dockerfile.multi-staged.jvm
           push: true
           tags: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:latest
+  deploy:
+    name: Deploy to Leocloud
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v3
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.25.4'
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.10.2'
+
+      - name: Install oidc plugin for kubectl
+        run: |
+          wget https://github.com/int128/kubelogin/releases/download/v1.25.3/kubelogin_linux_amd64.zip
+          mkdir kubelogin
+          unzip kubelogin_linux_amd64.zip -d kubelogin
+          mv kubelogin/kubelogin kubelogin/kubectl-oidc_login
+          echo $(pwd)/kubelogin >> $GITHUB_PATH
+
+      - uses: azure/k8s-set-context@v2
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBECONFIG }}
+
+      - name: Upgrade Helm Deployment # to update k8s manifests in the leocloud cluster, doesn't trigger image pull
+        run: helm upgrade --install ${{ env.HELM_RELEASE_NAME }} ./helm --namespace ${{ secrets.LEOCLOUD_NAMESPACE }}
+      - name: Rollout Restart Deployment # Used to trigger image pull action in the leocloud
+        run: kubectl rollout restart deployment ${{ env.DEPLOYMENT_NAME }} --namespace=${{ secrets.LEOCLOUD_NAMESPACE }}

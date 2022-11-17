@@ -1,60 +1,58 @@
-# leocloud-demo Project
+# Deployment of a Basic Quarkus Application to Leocloud
 
-This project uses Quarkus, the Supersonic Subatomic Java Framework.
+## Setup
 
-If you want to learn more about Quarkus, please visit its website: https://quarkus.io/ .
+### Github Secrets
 
-## Running the application in dev mode
+In order to deploy this application, you need to set the ``KUBECONFIG`` secret. It should contain the contents of 
+the kubeconfig file you use to connect to LeoCloud. 
 
-You can run your application in dev mode that enables live coding using:
-```shell script
-./mvnw compile quarkus:dev
+But, you need to add following 2 lines under ``users.oidc.user.exec.args``
+
+This is needed, because you cannot open a browser window in a gh-runner to log in and the LeoCloud uses OIDC (Keycloak) for authentication.
+
+```
+- --username=[LEOCLOUD EMAIL]
+- --password=[LEOCLOUD PASSWORD]
 ```
 
-> **_NOTE:_**  Quarkus now ships with a Dev UI, which is available in dev mode only at http://localhost:8080/q/dev/.
+You also have to set te ``LEOCLOUD_NAMESPACE`` secret. It should contain your namespace (`student-v-nachname` ex. `student-d-pavelescu`)
 
-## Packaging and running the application
 
-The application can be packaged using:
-```shell script
-./mvnw package
-```
-It produces the `quarkus-run.jar` file in the `target/quarkus-app/` directory.
-Be aware that it’s not an _über-jar_ as the dependencies are copied into the `target/quarkus-app/lib/` directory.
+### Helm Values
 
-The application is now runnable using `java -jar target/quarkus-app/quarkus-run.jar`.
+You can configure your deployment under `helm/values.yml`. 
 
-If you want to build an _über-jar_, execute the following command:
-```shell script
-./mvnw package -Dquarkus.package.type=uber-jar
-```
+#### Replacing the Deployment URL
 
-The application, packaged as an _über-jar_, is now runnable using `java -jar target/*-runner.jar`.
+You should replace the deployment URL of your application in the helm values file (`ingress.path`). It should start with your 
+LeoCloud Username (/v.nachname/) and then it can be followed by anything you want.
 
-## Creating a native executable
+#### Replacing the Image Name
 
-You can create a native executable using: 
-```shell script
-./mvnw package -Pnative
-```
+The Github Action Build Job compiles and pushes the image to the Github Container Registry. The name of the image is based on your username and repository name. 
+You need to set your own in the helm values file. (`image.repository`)
 
-Or, if you don't have GraalVM installed, you can run the native executable build in a container using: 
-```shell script
-./mvnw package -Pnative -Dquarkus.native.container-build=true
-```
+## Note
 
-You can then execute your native executable with: `./target/leocloud-demo-1.0.0-SNAPSHOT-runner`
+If you use this repository as a template for your own deployment, make sure the access to the ghcr images is public (by default in public Github Repositories). 
+If your repository is private, you can still make the images public by opening the `Package page`, then clicking on `Package Settings > Change Visibility` in GitHub.
 
-If you want to learn more about building native executables, please consult https://quarkus.io/guides/maven-tooling.
+If you wish to use private ghcr images, then you have add a Secret containing your GitHub Token and username, which is described [here](https://dev.to/asizikov/using-github-container-registry-with-kubernetes-38fb)
 
-## Related Guides
+## Description
 
-- RESTEasy Reactive ([guide](https://quarkus.io/guides/resteasy-reactive)): A JAX-RS implementation utilizing build time processing and Vert.x. This extension is not compatible with the quarkus-resteasy extension, or any of the extensions that depend on it.
+Every time a push event is triggered on the main branch (merge, commit, ...), the quarkus application is compiled
+using a multi-stage Docker image.
 
-## Provided Code
+It is then pushed to the `Github Container Registry (ghcr.io)`.
 
-### RESTEasy Reactive
+Afterwards, the Deploy job starts and it sets up kubectl and helm. It then updates the helm deployment to update 
+changes in the k8s manifests and helm `values` files
 
-Easily start your Reactive RESTful Web Services
+As a last step, it triggers a rollout restart, which restarts the leocloud-demo deployment (without downtime) and pulls 
+the new latest image from the Github Container Registry.
 
-[Related guide section...](https://quarkus.io/guides/getting-started-reactive#reactive-jax-rs-resources)
+In a normal production environment, you should not use "latest" as an image tag. Then, you would just have to update the tag on 
+every release (using helm values overrides). Doing so, you do not need the last step where we rollout restart the deployment 
+because the helm upgrade step would notice the change in the image tag and automatically pull the new image.
